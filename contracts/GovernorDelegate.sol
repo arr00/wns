@@ -11,24 +11,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
     /// @notice The name of this contract
     string public name;
 
-    /// @notice The minimum settable proposal threshold
-    uint public constant MIN_PROPOSAL_THRESHOLD = 1_000e18;
-
-    /// @notice The maximum settable proposal threshold
-    uint public constant MAX_PROPOSAL_THRESHOLD = 100_000e18;
-
-    /// @notice The minimum settable voting period
-    uint public constant MIN_VOTING_PERIOD = 5760; // About 24 hours
-
-    /// @notice The max settable voting period
-    uint public constant MAX_VOTING_PERIOD = 80640; // About 2 weeks
-
-    /// @notice The min settable voting delay
-    uint public constant MIN_VOTING_DELAY = 1;
-
-    /// @notice The max settable voting delay
-    uint public constant MAX_VOTING_DELAY = 40320; // About 1 week
-
     /// @notice The number of votes in support of a proposal required in order for a quorum to be reached and for a vote to succeed
     uint public constant quorumVotes = 400000e18; // 400,000 = 4% of governance token supplu
 
@@ -83,21 +65,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         require(
             governanceToken_ != address(0),
             "Governor::initialize: invalid governance token address"
-        );
-        require(
-            votingPeriod_ >= MIN_VOTING_PERIOD &&
-                votingPeriod_ <= MAX_VOTING_PERIOD,
-            "Governor::initialize: invalid voting period"
-        );
-        require(
-            votingDelay_ >= MIN_VOTING_DELAY &&
-                votingDelay_ <= MAX_VOTING_DELAY,
-            "Governor::initialize: invalid voting delay"
-        );
-        require(
-            proposalThreshold_ >= MIN_PROPOSAL_THRESHOLD &&
-                proposalThreshold_ <= MAX_PROPOSAL_THRESHOLD,
-            "Governor::initialize: invalid proposal threshold"
         );
 
         timelock = TimelockInterface(timelock_);
@@ -657,11 +624,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
      */
     function _setVotingDelay(uint newVotingDelay) external {
         require(msg.sender == admin, "Governor::_setVotingDelay: admin only");
-        require(
-            newVotingDelay >= MIN_VOTING_DELAY &&
-                newVotingDelay <= MAX_VOTING_DELAY,
-            "Governor::_setVotingDelay: invalid voting delay"
-        );
         uint oldVotingDelay = votingDelay;
         votingDelay = newVotingDelay;
 
@@ -674,11 +636,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
      */
     function _setVotingPeriod(uint newVotingPeriod) external {
         require(msg.sender == admin, "Governor::_setVotingPeriod: admin only");
-        require(
-            newVotingPeriod >= MIN_VOTING_PERIOD &&
-                newVotingPeriod <= MAX_VOTING_PERIOD,
-            "Governor::_setVotingPeriod: invalid voting period"
-        );
         uint oldVotingPeriod = votingPeriod;
         votingPeriod = newVotingPeriod;
 
@@ -694,11 +651,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         require(
             msg.sender == admin,
             "Governor::_setProposalThreshold: admin only"
-        );
-        require(
-            newProposalThreshold >= MIN_PROPOSAL_THRESHOLD &&
-                newProposalThreshold <= MAX_PROPOSAL_THRESHOLD,
-            "Governor::_setProposalThreshold: invalid proposal threshold"
         );
         uint oldProposalThreshold = proposalThreshold;
         proposalThreshold = newProposalThreshold;
