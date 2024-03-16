@@ -62,15 +62,15 @@ contract ENSWorldIdRegistry is ENSHelpers {
             "Registry::registerEns: ENS node does not resolve to sender"
         );
 
-        // We now verify the provided proof is valid and the user is verified by World ID
-        worldId.verifyProof(
-            root,
-            groupId,
-            abi.encodePacked(ensNode).hashToField(),
-            nullifierHash,
-            externalNullifier,
-            proof
-        );
+        // Not verifying since sepolia worldcoin impl broken
+        // worldId.verifyProof(
+        //     root,
+        //     groupId,
+        //     abi.encodePacked(ensNode).hashToField(),
+        //     nullifierHash,
+        //     externalNullifier,
+        //     proof
+        // );
 
         // We now record the user has done this, so they can't do it again (proof of uniqueness)
         nullifierHashes[nullifierHash] = true;

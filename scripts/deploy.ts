@@ -1,4 +1,4 @@
-import hre, { network, run, ethers } from "hardhat";
+import hre, { run, ethers } from "hardhat";
 
 async function main() {
   await run("compile");
@@ -40,12 +40,17 @@ async function main() {
     ENS_REVERSE_RESOLVER
   );
 
+  const Timelock = (await ethers.getContractFactory("Timelock")).connect(
+    deployer
+  );
+  const timelock = await Timelock.deploy(deployer.address, 60);
+
   const GovernorDelegator = (
     await ethers.getContractFactory("GovernorDelegator")
   ).connect(deployer);
   const governorDelegator = await GovernorDelegator.deploy(
     "My Governance",
-    "0x0000000000000000000000000000000000000001",
+    timelock,
     governanceToken,
     deployer.address,
     governorDelegate,
@@ -55,12 +60,20 @@ async function main() {
     ensWorldIdRegistry
   );
 
-  console.log({ governorDelegator, governanceToken, governorDelegate });
+  await timelock.setAdmin(governorDelegator);
+
+  console.log({
+    governorDelegator,
+    governanceToken,
+    governorDelegate,
+    ensWorldIdRegistry,
+    timelock,
+  });
   console.log(
-    "Deployment complete. Waiting for 10 seconds to verify contract on etherscan"
+    "Deployment complete. Waiting for 20 seconds to verify contract on etherscan"
   );
 
-  await sleep(10_000);
+  await sleep(20_000);
 
   await hre.run("verify:verify", {
     address: await governorDelegator.getAddress(),
@@ -73,12 +86,12 @@ async function main() {
       100,
       1,
       100,
-      World_ID_Router,
+      ensWorldIdRegistry,
     ],
   });
 
   await hre.run("verify:verify", {
-    address: "0x96154753af7f2ed7a994e71ad102348486db8b49",
+    address: await governanceToken.getAddress(),
     constructorArguments: [
       "My Governance Token",
       "MGT",
@@ -101,6 +114,11 @@ async function main() {
       ENS,
       ENS_REVERSE_RESOLVER,
     ],
+  });
+
+  await hre.run("verify:verify", {
+    address: await timelock.getAddress(),
+    constructorArguments: [deployer.address, 60],
   });
 }
 

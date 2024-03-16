@@ -10,7 +10,7 @@ import { setupGovernor } from "./governanceHelpers";
 describe("ENS Fork Test", function () {
   async function deployFixtures() {
     try {
-      await reset(process.env.RPC_URL);
+      await reset(process.env.SEPOLIA_URL);
     } catch (e) {
       throw new Error("Fork network unreachable");
     }
@@ -24,16 +24,16 @@ describe("ENS Fork Test", function () {
     return { owner, otherAccount, otherAccount2, governor, governanceToken };
   }
 
-  it("Delegate to Arr00.eth", async function () {
+  it("Delegate to tester", async function () {
     const { governanceToken } = await loadFixture(deployFixtures);
-    const arr00Signer = await ethers.getSigner(
-      "0x2B384212EDc04Ae8bB41738D05BA20E33277bf33"
+    const testerSigner = await ethers.getSigner(
+      "0x337Ac11F9031835CA88b3814D638d3B8b0dF680A"
     );
 
     const checkpointBlock1 = await ethers.provider.getBlockNumber();
     await mine();
 
-    await governanceToken.delegate(ethers.namehash("arr00.eth"));
+    await governanceToken.delegate(ethers.namehash("biggerdog.eth"));
 
     await mine();
     const checkpointBlock2 = await ethers.provider.getBlockNumber();
@@ -41,14 +41,14 @@ describe("ENS Fork Test", function () {
 
     const initialVotes = (
       await governanceToken.getPriorVotesWithENS(
-        arr00Signer.address,
+        testerSigner.address,
         checkpointBlock1
       )
     )[0];
 
     const finalVotes = (
       await governanceToken.getPriorVotesWithENS(
-        arr00Signer.address,
+        testerSigner.address,
         checkpointBlock2
       )
     )[0];

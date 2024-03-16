@@ -141,7 +141,7 @@ export async function setupGovernor(
         "GT",
         owner,
         "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
-        "0xA2C122BE93b0074270ebeE7f6b7292C7deB45047"
+        "0x8FADE66B79cC9f707aB26799354482EB93a5B7dD"
       );
     } else {
       // Need to deploy mock contracts for testing

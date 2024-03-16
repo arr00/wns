@@ -35,7 +35,7 @@ contract Timelock {
     );
 
     uint public constant GRACE_PERIOD = 14 days;
-    uint public constant MINIMUM_DELAY = 2 days;
+    uint public constant MINIMUM_DELAY = 1 minutes;
     uint public constant MAXIMUM_DELAY = 30 days;
 
     address public admin;
@@ -78,25 +78,14 @@ contract Timelock {
         emit NewDelay(delay);
     }
 
-    function acceptAdmin() public {
+    function setAdmin(address newAdmin) public {
         require(
-            msg.sender == pendingAdmin,
-            "Timelock::acceptAdmin: Call must come from pendingAdmin."
-        );
-        admin = msg.sender;
-        pendingAdmin = address(0);
-
-        emit NewAdmin(admin);
-    }
-
-    function setPendingAdmin(address pendingAdmin_) public {
-        require(
-            msg.sender == address(this),
+            msg.sender == admin,
             "Timelock::setPendingAdmin: Call must come from Timelock."
         );
-        pendingAdmin = pendingAdmin_;
+        admin = newAdmin;
 
-        emit NewPendingAdmin(pendingAdmin);
+        emit NewAdmin(admin);
     }
 
     function queueTransaction(
