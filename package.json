@@ -1,5 +1,5 @@
 {
-  "name": "compound-governance",
+  "name": "wns",
   "repository": "https://github.com/compound-finance/compound-governance.git",
   "author": "Arr00 <13561405+arr00@users.noreply.github.com>",
   "license": "MIT",
@@ -27,6 +27,7 @@
     "eslint-plugin-import": "^2.27.5",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-prettier": "^4.2.1",
+    "ethers": "^6.11.1",
     "hardhat": "^2.15.0",
     "husky": "^8.0.3",
     "lint-staged": "^13.2.3",
@@ -40,5 +41,9 @@
     "*.sol": [
       "prettier --check"
     ]
+  },
+  "dependencies": {
+    "@ensdomains/ens-contracts": "^1.1.4",
+    "typescript": "^5.4.2"
   }
 }

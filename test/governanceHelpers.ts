@@ -1,19 +1,21 @@
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
-import { BigNumberish, EventLog, AddressLike, Addressable } from "ethers";
-import { ethers } from "hardhat";
 import {
-  Comp,
-  GovernorAlpha,
-  GovernorBravoDelegate,
-  Timelock,
-} from "../typechain-types";
+  BigNumberish,
+  EventLog,
+  AddressLike,
+  Addressable,
+  BytesLike,
+  isAddressable,
+} from "ethers";
+import { ethers } from "hardhat";
+import { GovernorDelegate } from "../typechain-types";
 
 /**
  * Propose and fast forward to voting period of given governor
  * @returns Proposal id
  */
 export async function propose(
-  governor: GovernorAlpha | GovernorBravoDelegate,
+  governor: GovernorDelegate,
   targets: AddressLike[] = [ethers.ZeroAddress],
   values: BigNumberish[] = [0],
   callDatas: string[] = ["0x"],
@@ -34,7 +36,7 @@ export async function propose(
 }
 
 export async function proposeAndPass(
-  governor: GovernorBravoDelegate,
+  governor: GovernorDelegate,
   targets: AddressLike[] = [ethers.ZeroAddress],
   values: BigNumberish[] = [0],
   callDatas: string[] = ["0x"],
@@ -47,7 +49,7 @@ export async function proposeAndPass(
     callDatas,
     description
   );
-  await governor.castVote(proposalId, 1);
+  await governor.castVote(proposalId, 1, false);
 
   await mine(await governor.votingPeriod());
 
@@ -64,7 +66,7 @@ export async function proposeAndPass(
  * @returns Proposal id for the new proposal
  */
 export async function proposeAndQueue(
-  governor: GovernorBravoDelegate,
+  governor: GovernorDelegate,
   targets: AddressLike[] = [ethers.ZeroAddress],
   values: BigNumberish[] = [0],
   callDatas: string[] = ["0x"],
@@ -93,7 +95,7 @@ export async function proposeAndQueue(
  * @returns Proposal id for the new proposal
  */
 export async function proposeAndExecute(
-  governor: GovernorBravoDelegate,
+  governor: GovernorDelegate,
   targets: AddressLike[] = [ethers.ZeroAddress],
   values: BigNumberish[] = [0],
   callDatas: string[] = ["0x"],
@@ -116,87 +118,77 @@ export async function proposeAndExecute(
   return proposalId;
 }
 
-export async function setupGovernorAlpha() {
+export async function setupGovernor(forked: boolean) {
   const [owner] = await ethers.getSigners();
 
   const Timelock = await ethers.getContractFactory("Timelock");
-  const Comp = await ethers.getContractFactory("Comp");
-  const GovernorAlpha = await ethers.getContractFactory("GovernorAlpha");
+  const GovernanceToken = await ethers.getContractFactory("GovernanceToken");
+  const GovernorDelegator = await ethers.getContractFactory(
+    "GovernorDelegator"
+  );
+  const GovernorDelegate = await ethers.getContractFactory("GovernorDelegate");
 
   const timelock = await Timelock.deploy(owner, 172800);
-  const comp = await Comp.deploy(owner);
-  const governorAlpha: GovernorAlpha = (await GovernorAlpha.deploy(
+  const governorDelegate = await GovernorDelegate.deploy();
+
+  const governanceToken = await (async function () {
+    if (forked) {
+      return await GovernanceToken.deploy(
+        "Governance Token",
+        "GT",
+        owner,
+        "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
+        "0xA2C122BE93b0074270ebeE7f6b7292C7deB45047"
+      );
+    } else {
+      // Need to deploy mock contracts for testing
+      const MockResolver = await ethers.getContractFactory("MockResolver");
+      const MockENS = await ethers.getContractFactory("MockENS");
+
+      const mockResolver = await MockResolver.deploy();
+      const mockEns = await MockENS.deploy(mockResolver);
+
+      return await GovernanceToken.deploy(
+        "Governance Token",
+        "GT",
+        owner,
+        mockEns,
+        mockResolver
+      );
+    }
+  })();
+  await governanceToken.delegate(await addressToBytes(owner));
+
+  let governor: GovernorDelegate = (await GovernorDelegator.deploy(
+    "Governor",
     timelock,
-    comp,
-    owner
-  )) as unknown as GovernorAlpha;
+    governanceToken,
+    owner,
+    governorDelegate,
+    5760,
+    100,
+    1000n * 10n ** 18n
+  )) as unknown as GovernorDelegate;
+  governor = GovernorDelegate.attach(
+    await governor.getAddress()
+  ) as GovernorDelegate;
 
   const eta =
     BigInt(await time.latest()) + 100n + (await timelock.MINIMUM_DELAY());
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const txData = (
-    await timelock.setPendingAdmin.populateTransaction(governorAlpha)
-  ).data!;
+  const txData = (await timelock.setPendingAdmin.populateTransaction(governor))
+    .data!;
   await timelock.queueTransaction(timelock, 0, "", txData, eta);
   await time.increaseTo(eta);
   await timelock.executeTransaction(timelock, 0, "", txData, eta);
-  await governorAlpha.__acceptAdmin();
+  await governor.acceptAdmin();
 
-  return { governorAlpha, timelock, comp };
-}
-
-export async function setupGovernorBravo(
-  timelock: Timelock,
-  comp: Comp,
-  governorAlpha: GovernorAlpha
-) {
-  const [owner] = await ethers.getSigners();
-  const GovernorBravoDelegator = await ethers.getContractFactory(
-    "GovernorBravoDelegator"
-  );
-  const GovernorBravoDelegate = await ethers.getContractFactory(
-    "GovernorBravoDelegate"
-  );
-
-  const governorBravoDelegate = await GovernorBravoDelegate.deploy();
-  let governorBravo: GovernorBravoDelegate =
-    (await GovernorBravoDelegator.deploy(
-      timelock,
-      comp,
-      owner,
-      governorBravoDelegate,
-      5760,
-      100,
-      1000n * 10n ** 18n
-    )) as unknown as GovernorBravoDelegate;
-  await comp.delegate(owner);
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const txData = (
-    await timelock.setPendingAdmin.populateTransaction(governorBravo)
-  ).data!;
-  await propose(
-    governorAlpha,
-    [timelock],
-    [0n],
-    [txData],
-    "Transfer admin for bravo"
-  );
-  await governorAlpha.castVote(await governorAlpha.votingDelay(), true);
-  await mine(await governorAlpha.votingPeriod());
-  await governorAlpha.queue(1);
-  await time.increase(await timelock.MINIMUM_DELAY());
-  await governorAlpha.execute(1);
-  governorBravo = GovernorBravoDelegate.attach(
-    await governorBravo.getAddress()
-  ) as GovernorBravoDelegate;
-  await governorBravo._initiate(governorAlpha);
-
-  return { governorBravo };
+  return { governor, governanceToken, timelock };
 }
 
 export async function getTypedDomain(address: Addressable, chainId: bigint) {
   return {
-    name: "Compound Governor Bravo",
+    name: "Governor",
     chainId: chainId.toString(),
     verifyingContract: await address.getAddress(),
   };
@@ -207,6 +199,7 @@ export function getVoteTypes() {
     Ballot: [
       { name: "proposalId", type: "uint256" },
       { name: "support", type: "uint8" },
+      { name: "useEns", type: "bool" },
     ],
   };
 }
@@ -215,17 +208,18 @@ export function getVoteWithReasonTypes() {
     Ballot: [
       { name: "proposalId", type: "uint256" },
       { name: "support", type: "uint8" },
+      { name: "useEns", type: "bool" },
       { name: "reason", type: "string" },
     ],
   };
 }
 
-export async function getTypedDomainComp(
+export async function getTypedDomainGovernanceToken(
   address: Addressable,
   chainId: bigint
 ) {
   return {
-    name: "Compound",
+    name: "Governance Token",
     chainId: chainId.toString(),
     verifyingContract: await address.getAddress(),
   };
@@ -234,7 +228,7 @@ export async function getTypedDomainComp(
 export function getDelegationTypes() {
   return {
     Delegation: [
-      { name: "delegatee", type: "address" },
+      { name: "delegatee", type: "bytes32" },
       { name: "nonce", type: "uint256" },
       { name: "expiry", type: "uint256" },
     ],
@@ -263,4 +257,14 @@ export enum ProposalState {
   Queued,
   Expired,
   Executed,
+}
+
+export async function addressToBytes(
+  address: Addressable | string
+): Promise<BytesLike> {
+  let val = address;
+  if (isAddressable(val)) {
+    val = await val.getAddress();
+  }
+  return ethers.AbiCoder.defaultAbiCoder().encode(["address"], [val]);
 }

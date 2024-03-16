@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.19;
 
-contract GovernorBravoEvents {
+import { GovernanceToken } from "./GovernanceToken.sol";
+
+contract GovernorEvents {
+    enum VoteSupport {
+        Against,
+        For,
+        Abstain
+    }
+
     /// @notice An event emitted when a new proposal is created
     event ProposalCreated(
         uint id,
@@ -26,7 +34,7 @@ contract GovernorBravoEvents {
     event VoteCast(
         address indexed voter,
         uint proposalId,
-        uint8 support,
+        VoteSupport support,
         uint votes,
         string reason
     );
@@ -71,7 +79,7 @@ contract GovernorBravoEvents {
     event WhitelistGuardianSet(address oldGuardian, address newGuardian);
 }
 
-contract GovernorBravoDelegatorStorage {
+contract GovernorDelegatorStorage {
     /// @notice Administrator for this contract
     address public admin;
 
@@ -83,12 +91,12 @@ contract GovernorBravoDelegatorStorage {
 }
 
 /**
- * @title Storage for Governor Bravo Delegate
- * @notice For future upgrades, do not change GovernorBravoDelegateStorageV1. Create a new
- * contract which implements GovernorBravoDelegateStorageV1 and following the naming convention
- * GovernorBravoDelegateStorageVX.
+ * @title Storage for Governor Delegate
+ * @notice For future upgrades, do not change GovernorDelegateStorageV1. Create a new
+ * contract which implements GovernorDelegateStorageV1 and following the naming convention
+ * GovernorDelegateStorageVX.
  */
-contract GovernorBravoDelegateStorageV1 is GovernorBravoDelegatorStorage {
+contract GovernorDelegateStorageV1 is GovernorDelegatorStorage, GovernorEvents {
     /// @notice The delay before voting on a proposal may take place, once proposed, in blocks
     uint public votingDelay;
 
@@ -98,17 +106,14 @@ contract GovernorBravoDelegateStorageV1 is GovernorBravoDelegatorStorage {
     /// @notice The number of votes required in order for a voter to become a proposer
     uint public proposalThreshold;
 
-    /// @notice Initial proposal id set at become
-    uint public initialProposalId;
-
     /// @notice The total number of proposals
     uint public proposalCount;
 
-    /// @notice The address of the Compound Protocol Timelock
+    /// @notice The address of the Timelock
     TimelockInterface public timelock;
 
-    /// @notice The address of the Compound governance token
-    CompInterface public comp;
+    /// @notice The address of the governance token
+    GovernanceToken public governanceToken;
 
     /// @notice The official record of all proposals ever proposed
     mapping(uint => Proposal) public proposals;
@@ -116,9 +121,13 @@ contract GovernorBravoDelegateStorageV1 is GovernorBravoDelegatorStorage {
     /// @notice The latest proposal for each proposer
     mapping(address => uint) public latestProposalIds;
 
+    /// @notice Stores the expiration of account whitelist status as a timestamp
+    mapping(address => uint) public whitelistAccountExpirations;
+
+    /// @notice Address which manages whitelisted proposals and whitelist accounts
+    address public whitelistGuardian;
+
     struct Proposal {
-        /// @notice Unique id for looking up a proposal
-        uint id;
         /// @notice Creator of the proposal
         address proposer;
         /// @notice The timestamp that the proposal will be available for execution, set once the vote succeeds
@@ -146,7 +155,7 @@ contract GovernorBravoDelegateStorageV1 is GovernorBravoDelegatorStorage {
         /// @notice Flag marking whether the proposal has been executed
         bool executed;
         /// @notice Receipts of ballots for the entire set of voters
-        mapping(address => Receipt) receipts;
+        mapping(bytes32 => Receipt) receipts;
     }
 
     /// @notice Ballot receipt record for a voter
@@ -154,7 +163,7 @@ contract GovernorBravoDelegateStorageV1 is GovernorBravoDelegatorStorage {
         /// @notice Whether or not a vote has been cast
         bool hasVoted;
         /// @notice Whether or not the voter supports the proposal or abstains
-        uint8 support;
+        VoteSupport support;
         /// @notice The number of votes the voter had, which were cast
         uint96 votes;
     }
@@ -170,14 +179,6 @@ contract GovernorBravoDelegateStorageV1 is GovernorBravoDelegatorStorage {
         Expired,
         Executed
     }
-}
-
-contract GovernorBravoDelegateStorageV2 is GovernorBravoDelegateStorageV1 {
-    /// @notice Stores the expiration of account whitelist status as a timestamp
-    mapping(address => uint) public whitelistAccountExpirations;
-
-    /// @notice Address which manages whitelisted proposals and whitelist accounts
-    address public whitelistGuardian;
 }
 
 interface TimelockInterface {
@@ -212,16 +213,4 @@ interface TimelockInterface {
         bytes calldata data,
         uint eta
     ) external payable returns (bytes memory);
-}
-
-interface CompInterface {
-    function getPriorVotes(
-        address account,
-        uint blockNumber
-    ) external view returns (uint96);
-}
-
-interface GovernorAlphaInterface {
-    /// @notice The total number of proposals
-    function proposalCount() external returns (uint);
 }

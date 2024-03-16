@@ -1,66 +1,92 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.19;
 
-contract Comp {
+import { ENSHelpers } from "./ENSHelpers.sol";
+
+contract GovernanceToken is ENSHelpers {
     /// @notice EIP-20 token name for this token
-    string public constant name = "Compound";
+    string public name;
 
     /// @notice EIP-20 token symbol for this token
-    string public constant symbol = "COMP";
+    string public symbol;
 
     /// @notice EIP-20 token decimals for this token
     uint8 public constant decimals = 18;
 
     /// @notice Total number of tokens in circulation
-    uint public constant totalSupply = 10000000e18; // 10 million Comp
+    uint public constant totalSupply = 10000000e18; // 10 million tokens
 
     /// @notice Allowance amounts on behalf of others
-    mapping (address => mapping (address => uint96)) internal allowances;
+    mapping(address => mapping(address => uint96)) internal allowances;
 
     /// @notice Official record of token balances for each account
-    mapping (address => uint96) internal balances;
+    mapping(address => uint96) internal balances;
 
-    /// @notice A record of each accounts delegate
-    mapping (address => address) public delegates;
+    /// @notice A record of each accounts delegates
+    mapping(address => bytes32) public delegates;
 
     /// @notice A checkpoint for marking number of votes from a given block
     struct Checkpoint {
-        uint32 fromBlock;
+        uint96 fromBlock;
         uint96 votes;
     }
 
     /// @notice A record of votes checkpoints for each account, by index
-    mapping (address => mapping (uint32 => Checkpoint)) public checkpoints;
+    mapping(bytes32 => mapping(uint32 => Checkpoint)) public checkpoints;
 
     /// @notice The number of checkpoints for each account
-    mapping (address => uint32) public numCheckpoints;
+    mapping(bytes32 => uint32) public numCheckpoints;
 
     /// @notice The EIP-712 typehash for the contract's domain
-    bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
+    bytes32 public constant DOMAIN_TYPEHASH =
+        keccak256(
+            "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
+        );
 
     /// @notice The EIP-712 typehash for the delegation struct used by the contract
-    bytes32 public constant DELEGATION_TYPEHASH = keccak256("Delegation(address delegatee,uint256 nonce,uint256 expiry)");
+    bytes32 public constant DELEGATION_TYPEHASH =
+        keccak256("Delegation(bytes32 delegatee,uint256 nonce,uint256 expiry)");
 
     /// @notice A record of states for signing / validating signatures
-    mapping (address => uint) public nonces;
+    mapping(address => uint) public nonces;
 
     /// @notice An event thats emitted when an account changes its delegate
-    event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
+    event DelegateChanged(
+        address indexed delegator,
+        bytes32 indexed fromDelegate,
+        bytes32 indexed toDelegate
+    );
 
     /// @notice An event thats emitted when a delegate account's vote balance changes
-    event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
+    event DelegateVotesChanged(
+        bytes32 indexed delegate,
+        uint previousBalance,
+        uint newBalance
+    );
 
     /// @notice The standard EIP-20 transfer event
     event Transfer(address indexed from, address indexed to, uint256 amount);
 
     /// @notice The standard EIP-20 approval event
-    event Approval(address indexed owner, address indexed spender, uint256 amount);
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 amount
+    );
 
     /**
-     * @notice Construct a new Comp token
+     * @notice Construct a new Governance Token
      * @param account The initial account to grant all the tokens
      */
-    constructor(address account) public {
+    constructor(
+        string memory _name,
+        string memory _symbol,
+        address account,
+        address _ens,
+        address _reverseResolver
+    ) ENSHelpers(_ens, _reverseResolver) {
+        name = _name;
+        symbol = _symbol;
         balances[account] = uint96(totalSupply);
         emit Transfer(address(0), account, totalSupply);
     }
@@ -71,7 +97,10 @@ contract Comp {
      * @param spender The address of the account spending the funds
      * @return The number of tokens approved
      */
-    function allowance(address account, address spender) external view returns (uint) {
+    function allowance(
+        address account,
+        address spender
+    ) external view returns (uint) {
         return allowances[account][spender];
     }
 
@@ -88,7 +117,10 @@ contract Comp {
         if (rawAmount == type(uint).max) {
             amount = type(uint96).max;
         } else {
-            amount = safe96(rawAmount, "Comp::approve: amount exceeds 96 bits");
+            amount = safe96(
+                rawAmount,
+                "GovernanceToken::approve: amount exceeds 96 bits"
+            );
         }
 
         allowances[msg.sender][spender] = amount;
@@ -113,7 +145,10 @@ contract Comp {
      * @return Whether or not the transfer succeeded
      */
     function transfer(address dst, uint rawAmount) external returns (bool) {
-        uint96 amount = safe96(rawAmount, "Comp::transfer: amount exceeds 96 bits");
+        uint96 amount = safe96(
+            rawAmount,
+            "GovernanceToken::transfer: amount exceeds 96 bits"
+        );
         _transferTokens(msg.sender, dst, amount);
         return true;
     }
@@ -125,13 +160,20 @@ contract Comp {
      * @param rawAmount The number of tokens to transfer
      * @return Whether or not the transfer succeeded
      */
-    function transferFrom(address src, address dst, uint rawAmount) external returns (bool) {
+    function transferFrom(
+        address src,
+        address dst,
+        uint rawAmount
+    ) external returns (bool) {
         address spender = msg.sender;
         uint96 spenderAllowance = allowances[src][spender];
-        uint96 amount = safe96(rawAmount, "Comp::approve: amount exceeds 96 bits");
+        uint96 amount = safe96(
+            rawAmount,
+            "GovernanceToken::approve: amount exceeds 96 bits"
+        );
 
         if (spender != src && spenderAllowance != type(uint96).max) {
-            uint96 newAllowance = sub96(spenderAllowance, amount, "Comp::transferFrom: transfer amount exceeds spender allowance");
+            uint96 newAllowance = spenderAllowance - amount;
             allowances[src][spender] = newAllowance;
 
             emit Approval(src, spender, newAllowance);
@@ -145,7 +187,7 @@ contract Comp {
      * @notice Delegate votes from `msg.sender` to `delegatee`
      * @param delegatee The address to delegate votes to
      */
-    function delegate(address delegatee) public {
+    function delegate(bytes32 delegatee) public {
         return _delegate(msg.sender, delegatee);
     }
 
@@ -158,14 +200,41 @@ contract Comp {
      * @param r Half of the ECDSA signature pair
      * @param s Half of the ECDSA signature pair
      */
-    function delegateBySig(address delegatee, uint nonce, uint expiry, uint8 v, bytes32 r, bytes32 s) public {
-        bytes32 domainSeparator = keccak256(abi.encode(DOMAIN_TYPEHASH, keccak256(bytes(name)), getChainId(), address(this)));
-        bytes32 structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, delegatee, nonce, expiry));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    function delegateBySig(
+        bytes32 delegatee,
+        uint nonce,
+        uint expiry,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                DOMAIN_TYPEHASH,
+                keccak256(bytes(name)),
+                getChainId(),
+                address(this)
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(DELEGATION_TYPEHASH, delegatee, nonce, expiry)
+        );
+        bytes32 digest = keccak256(
+            abi.encodePacked("\x19\x01", domainSeparator, structHash)
+        );
         address signatory = ecrecover(digest, v, r, s);
-        require(signatory != address(0), "Comp::delegateBySig: invalid signature");
-        require(nonce == nonces[signatory]++, "Comp::delegateBySig: invalid nonce");
-        require(block.timestamp <= expiry, "Comp::delegateBySig: signature expired");
+        require(
+            signatory != address(0),
+            "GovernanceToken::delegateBySig: invalid signature"
+        );
+        require(
+            nonce == nonces[signatory]++,
+            "GovernanceToken::delegateBySig: invalid nonce"
+        );
+        require(
+            block.timestamp <= expiry,
+            "GovernanceToken::delegateBySig: signature expired"
+        );
         return _delegate(signatory, delegatee);
     }
 
@@ -174,9 +243,10 @@ contract Comp {
      * @param account The address to get votes balance
      * @return The number of current votes for `account`
      */
-    function getCurrentVotes(address account) external view returns (uint96) {
+    function getCurrentVotes(bytes32 account) external view returns (uint96) {
         uint32 nCheckpoints = numCheckpoints[account];
-        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
+        return
+            nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
     }
 
     /**
@@ -186,8 +256,14 @@ contract Comp {
      * @param blockNumber The block number to get the vote balance at
      * @return The number of votes the account had as of the given block
      */
-    function getPriorVotes(address account, uint blockNumber) public view returns (uint96) {
-        require(blockNumber < block.number, "Comp::getPriorVotes: not yet determined");
+    function getPriorVotes(
+        bytes32 account,
+        uint blockNumber
+    ) public view returns (uint96) {
+        require(
+            blockNumber < block.number,
+            "GovernanceToken::getPriorVotes: not yet determined"
+        );
 
         uint32 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
@@ -220,8 +296,23 @@ contract Comp {
         return checkpoints[account][lower].votes;
     }
 
-    function _delegate(address delegator, address delegatee) internal {
-        address currentDelegate = delegates[delegator];
+    function getPriorVotesWithENS(
+        address account,
+        uint blockNumber
+    ) public view returns (uint96 votes, bytes32 ensNode) {
+        bytes32 addressAsBytes32;
+        assembly {
+            addressAsBytes32 := account
+        }
+        ensNode = addressToEnsNode(account);
+        votes = getPriorVotes(addressAsBytes32, blockNumber);
+        if (ensNode != 0) {
+            votes += getPriorVotes(ensNode, blockNumber);
+        }
+    }
+
+    function _delegate(address delegator, bytes32 delegatee) internal {
+        bytes32 currentDelegate = delegates[delegator];
         uint96 delegatorBalance = balances[delegator];
         delegates[delegator] = delegatee;
 
@@ -231,71 +322,86 @@ contract Comp {
     }
 
     function _transferTokens(address src, address dst, uint96 amount) internal {
-        require(src != address(0), "Comp::_transferTokens: cannot transfer from the zero address");
-        require(dst != address(0), "Comp::_transferTokens: cannot transfer to the zero address");
+        require(
+            src != address(0),
+            "GovernanceToken::_transferTokens: cannot transfer from the zero address"
+        );
+        require(
+            dst != address(0),
+            "GovernanceToken::_transferTokens: cannot transfer to the zero address"
+        );
 
-        balances[src] = sub96(balances[src], amount, "Comp::_transferTokens: transfer amount exceeds balance");
-        balances[dst] = add96(balances[dst], amount, "Comp::_transferTokens: transfer amount overflows");
+        balances[src] = balances[src] - amount;
+        balances[dst] = balances[dst] + amount;
         emit Transfer(src, dst, amount);
 
         _moveDelegates(delegates[src], delegates[dst], amount);
     }
 
-    function _moveDelegates(address srcRep, address dstRep, uint96 amount) internal {
+    function _moveDelegates(
+        bytes32 srcRep,
+        bytes32 dstRep,
+        uint96 amount
+    ) internal {
         if (srcRep != dstRep && amount > 0) {
-            if (srcRep != address(0)) {
+            if (srcRep != 0) {
                 uint32 srcRepNum = numCheckpoints[srcRep];
-                uint96 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
-                uint96 srcRepNew = sub96(srcRepOld, amount, "Comp::_moveVotes: vote amount underflows");
+                uint96 srcRepOld = checkpoints[srcRep][srcRepNum - 1].votes;
+                uint96 srcRepNew = srcRepOld - amount;
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
-            if (dstRep != address(0)) {
+            if (dstRep != 0) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
-                uint96 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
-                uint96 dstRepNew = add96(dstRepOld, amount, "Comp::_moveVotes: vote amount overflows");
+                uint96 dstRepOld = dstRepNum > 0
+                    ? checkpoints[dstRep][dstRepNum - 1].votes
+                    : 0;
+                uint96 dstRepNew = dstRepOld + amount;
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
             }
         }
     }
 
-    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, uint96 oldVotes, uint96 newVotes) internal {
-      uint32 blockNumber = safe32(block.number, "Comp::_writeCheckpoint: block number exceeds 32 bits");
+    function _writeCheckpoint(
+        bytes32 delegatee,
+        uint32 nCheckpoints,
+        uint96 oldVotes,
+        uint96 newVotes
+    ) internal {
+        uint96 blockNumber = safe96(
+            block.number,
+            "GovernanceToken::_writeCheckpoint: block number exceeds 32 bits"
+        );
 
-      if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
-          checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
-      } else {
-          checkpoints[delegatee][nCheckpoints] = Checkpoint(blockNumber, newVotes);
-          numCheckpoints[delegatee] = nCheckpoints + 1;
-      }
+        if (
+            nCheckpoints > 0 &&
+            checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber
+        ) {
+            checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
+        } else {
+            checkpoints[delegatee][nCheckpoints] = Checkpoint(
+                blockNumber,
+                newVotes
+            );
+            numCheckpoints[delegatee] = nCheckpoints + 1;
+        }
 
-      emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
+        emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
     }
 
-    function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
-        require(n < 2**32, errorMessage);
-        return uint32(n);
-    }
-
-    function safe96(uint n, string memory errorMessage) internal pure returns (uint96) {
-        require(n < 2**96, errorMessage);
+    function safe96(
+        uint n,
+        string memory errorMessage
+    ) internal pure returns (uint96) {
+        require(n < 2 ** 96, errorMessage);
         return uint96(n);
-    }
-
-    function add96(uint96 a, uint96 b, string memory errorMessage) internal pure returns (uint96) {
-        uint96 c = a + b;
-        require(c >= a, errorMessage);
-        return c;
-    }
-
-    function sub96(uint96 a, uint96 b, string memory errorMessage) internal pure returns (uint96) {
-        require(b <= a, errorMessage);
-        return a - b;
     }
 
     function getChainId() internal view returns (uint) {
         uint256 chainId;
-        assembly { chainId := chainid() }
+        assembly {
+            chainId := chainid()
+        }
         return chainId;
     }
 }
