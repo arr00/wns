@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 pragma solidity ^0.8.19;
 
-import { GovernorDelegateStorageV1, TimelockInterface } from "./GovernorInterfaces.sol";
+import { GovernorDelegateStorageV1, TimelockInterface, ENSWorldIdRegistry } from "./GovernorInterfaces.sol";
 import { GovernanceToken } from "./GovernanceToken.sol";
 import { AddressUtils } from "./AddressUtils.sol";
 
@@ -43,13 +43,11 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
 
     /// @notice The EIP-712 typehash for the ballot struct used by the contract
     bytes32 public constant BALLOT_TYPEHASH =
-        keccak256("Ballot(uint256 proposalId,uint8 support,bool useEns)");
+        keccak256("Ballot(uint256 proposalId,uint8 support)");
 
     /// @notice The EIP-712 typehash for the ballot with reason struct used by the contract
     bytes32 public constant BALLOT_WITH_REASON_TYPEHASH =
-        keccak256(
-            "Ballot(uint256 proposalId,uint8 support,bool useEns,string reason)"
-        );
+        keccak256("Ballot(uint256 proposalId,uint8 support,string reason)");
 
     /// @notice The EIP-712 typehash for the proposal struct used by the contract
     bytes32 public constant PROPOSAL_TYPEHASH =
@@ -71,7 +69,8 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         address governanceToken_,
         uint votingPeriod_,
         uint votingDelay_,
-        uint proposalThreshold_
+        uint proposalThreshold_,
+        ENSWorldIdRegistry ensWorldIdRegistry_
     ) public virtual {
         require(
             address(timelock) == address(0),
@@ -107,6 +106,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         votingDelay = votingDelay_;
         proposalThreshold = proposalThreshold_;
         name = name_;
+        ensWorldIdRegistry = ensWorldIdRegistry_;
     }
 
     // TODO: Fix this
@@ -377,7 +377,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         if (msg.sender != proposal.proposer) {
             require(
                 (governanceToken.getPriorVotes(
-                    proposal.proposer.toBytes32(),
+                    proposal.proposer,
                     block.number - 1
                 ) < proposalThreshold),
                 "Governor::cancel: proposer above threshold"
@@ -480,16 +480,12 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
      * @param proposalId The id of the proposal to vote on
      * @param support The support value for the vote. 0=against, 1=for, 2=abstain
      */
-    function castVote(
-        uint proposalId,
-        VoteSupport support,
-        bool useEns
-    ) external {
+    function castVote(uint proposalId, VoteSupport support) external {
         emit VoteCast(
             msg.sender,
             proposalId,
             support,
-            castVoteInternal(msg.sender, proposalId, support, useEns),
+            castVoteInternal(msg.sender, proposalId, support),
             ""
         );
     }
@@ -501,7 +497,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
     function castVoteBySig(
         uint proposalId,
         VoteSupport support,
-        bool useEns,
         uint8 v,
         bytes32 r,
         bytes32 s
@@ -515,7 +510,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
             )
         );
         bytes32 structHash = keccak256(
-            abi.encode(BALLOT_TYPEHASH, proposalId, support, useEns)
+            abi.encode(BALLOT_TYPEHASH, proposalId, support)
         );
         bytes32 digest = keccak256(
             abi.encodePacked("\x19\x01", domainSeparator, structHash)
@@ -529,7 +524,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
             signatory,
             proposalId,
             support,
-            castVoteInternal(signatory, proposalId, support, useEns),
+            castVoteInternal(signatory, proposalId, support),
             ""
         );
     }
@@ -538,20 +533,18 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
      * @notice Cast a vote for a proposal with a reason
      * @param proposalId The id of the proposal to vote on
      * @param support The support value for the vote. 0=against, 1=for, 2=abstain
-     * @param useEns Should vote include votes delegated to ENS
      * @param reason The reason given for the vote by the voter
      */
     function castVoteWithReason(
         uint proposalId,
         VoteSupport support,
-        bool useEns,
         string calldata reason
     ) external {
         emit VoteCast(
             msg.sender,
             proposalId,
             support,
-            castVoteInternal(msg.sender, proposalId, support, useEns),
+            castVoteInternal(msg.sender, proposalId, support),
             reason
         );
     }
@@ -559,7 +552,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
     function castVoteWithReasonBySig(
         uint proposalId,
         VoteSupport support,
-        bool useEns,
         string calldata reason,
         uint8 v,
         bytes32 r,
@@ -580,7 +572,6 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
                     BALLOT_WITH_REASON_TYPEHASH,
                     proposalId,
                     support,
-                    useEns,
                     keccak256(bytes(reason))
                 )
             );
@@ -597,7 +588,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
             signatory,
             proposalId,
             support,
-            castVoteInternal(signatory, proposalId, support, useEns),
+            castVoteInternal(signatory, proposalId, support),
             reason
         );
     }
@@ -612,44 +603,24 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
     function castVoteInternal(
         address voter,
         uint proposalId,
-        VoteSupport support,
-        bool useEns
+        VoteSupport support
     ) internal returns (uint96) {
         require(
             state(proposalId) == ProposalState.Active,
             "Governor::castVoteInternal: voting is closed"
         );
 
-        bytes32 voterAsBytes32 = voter.toBytes32();
         Proposal storage proposal = proposals[proposalId];
 
-        Receipt storage receipt = proposal.receipts[voterAsBytes32];
+        (uint96 totalVotes, bytes32 ensNode) = governanceToken
+            .getPriorVotesWithENS(voter, proposal.startBlock);
 
-        bytes32 ensNode;
-        Receipt memory ensReceipt;
-
-        uint96 addressVotes = governanceToken.getPriorVotes(
-            voterAsBytes32,
-            proposal.startBlock
+        require(
+            ensWorldIdRegistry.validatedEnsNodes(ensNode),
+            "Governor::castVoteInternal: voter ENS node not validated"
         );
-        uint96 totalVotes;
-        if (useEns) {
-            (totalVotes, ensNode) = governanceToken.getPriorVotesWithENS(
-                voter,
-                proposal.startBlock
-            );
-            ensReceipt = proposal.receipts[ensNode];
-            require(
-                ensReceipt.hasVoted == false,
-                "Governor::castVoteInternal: ENS already voted"
-            );
-            require(
-                ensNode != 0,
-                "Governor::castVoteInternal: no reverse ENS record"
-            );
-        } else {
-            totalVotes = addressVotes;
-        }
+
+        Receipt storage receipt = proposal.receipts[ensNode];
 
         require(
             receipt.hasVoted == false,
@@ -666,14 +637,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
 
         receipt.hasVoted = true;
         receipt.support = support;
-        receipt.votes = addressVotes;
-
-        if (useEns) {
-            ensReceipt.hasVoted = true;
-            ensReceipt.support = support;
-            ensReceipt.votes = totalVotes - addressVotes;
-            proposal.receipts[ensNode] = ensReceipt;
-        }
+        receipt.votes = totalVotes;
 
         return totalVotes;
     }

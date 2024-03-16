@@ -6,7 +6,7 @@ import { IWorldID } from "./vendor/IWorldID.sol";
 import { ByteHasher } from "./vendor/ByteHasher.sol";
 import { ENSHelpers } from "./ENSHelpers.sol";
 
-contract Registry is ENSHelpers {
+contract ENSWorldIdRegistry is ENSHelpers {
     using ByteHasher for bytes;
 
     IWorldID public immutable worldId;

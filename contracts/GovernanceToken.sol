@@ -185,7 +185,7 @@ contract GovernanceToken is ENSHelpers {
 
     /**
      * @notice Delegate votes from `msg.sender` to `delegatee`
-     * @param delegatee The address to delegate votes to
+     * @param delegatee The ens node  to delegate votes to
      */
     function delegate(bytes32 delegatee) public {
         return _delegate(msg.sender, delegatee);
@@ -239,44 +239,54 @@ contract GovernanceToken is ENSHelpers {
     }
 
     /**
-     * @notice Gets the current votes balance for `account`
-     * @param account The address to get votes balance
+     * @notice Gets the current votes balance for `ensNode`
      * @return The number of current votes for `account`
      */
-    function getCurrentVotes(bytes32 account) external view returns (uint96) {
-        uint32 nCheckpoints = numCheckpoints[account];
+    function getCurrentVotes(bytes32 ensNode) public view returns (uint96) {
+        uint32 nCheckpoints = numCheckpoints[ensNode];
         return
-            nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
+            nCheckpoints > 0 ? checkpoints[ensNode][nCheckpoints - 1].votes : 0;
+    }
+
+    /**
+     * @notice Gets the current votes balance for `account`
+     */
+    function getCurrentVotes(address account) external view returns (uint96) {
+        bytes32 ensNode = addressToEnsNode(account);
+        if (ensNode != 0) {
+            return getCurrentVotes(ensNode);
+        }
+        return 0;
     }
 
     /**
      * @notice Determine the prior number of votes for an account as of a block number
      * @dev Block number must be a finalized block or else this function will revert to prevent misinformation.
-     * @param account The address of the account to check
+     * @param ensNode The ens node to check
      * @param blockNumber The block number to get the vote balance at
      * @return The number of votes the account had as of the given block
      */
-    function getPriorVotes(
-        bytes32 account,
+    function _getPriorVotes(
+        bytes32 ensNode,
         uint blockNumber
-    ) public view returns (uint96) {
+    ) internal view returns (uint96) {
         require(
             blockNumber < block.number,
             "GovernanceToken::getPriorVotes: not yet determined"
         );
 
-        uint32 nCheckpoints = numCheckpoints[account];
+        uint32 nCheckpoints = numCheckpoints[ensNode];
         if (nCheckpoints == 0) {
             return 0;
         }
 
         // First check most recent balance
-        if (checkpoints[account][nCheckpoints - 1].fromBlock <= blockNumber) {
-            return checkpoints[account][nCheckpoints - 1].votes;
+        if (checkpoints[ensNode][nCheckpoints - 1].fromBlock <= blockNumber) {
+            return checkpoints[ensNode][nCheckpoints - 1].votes;
         }
 
         // Next check implicit zero balance
-        if (checkpoints[account][0].fromBlock > blockNumber) {
+        if (checkpoints[ensNode][0].fromBlock > blockNumber) {
             return 0;
         }
 
@@ -284,7 +294,7 @@ contract GovernanceToken is ENSHelpers {
         uint32 upper = nCheckpoints - 1;
         while (upper > lower) {
             uint32 center = upper - (upper - lower) / 2; // ceil, avoiding overflow
-            Checkpoint memory cp = checkpoints[account][center];
+            Checkpoint memory cp = checkpoints[ensNode][center];
             if (cp.fromBlock == blockNumber) {
                 return cp.votes;
             } else if (cp.fromBlock < blockNumber) {
@@ -293,21 +303,23 @@ contract GovernanceToken is ENSHelpers {
                 upper = center - 1;
             }
         }
-        return checkpoints[account][lower].votes;
+        return checkpoints[ensNode][lower].votes;
+    }
+
+    function getPriorVotes(
+        address account,
+        uint blockNumber
+    ) external view returns (uint96 votes) {
+        (votes, ) = getPriorVotesWithENS(account, blockNumber);
     }
 
     function getPriorVotesWithENS(
         address account,
         uint blockNumber
     ) public view returns (uint96 votes, bytes32 ensNode) {
-        bytes32 addressAsBytes32;
-        assembly {
-            addressAsBytes32 := account
-        }
         ensNode = addressToEnsNode(account);
-        votes = getPriorVotes(addressAsBytes32, blockNumber);
         if (ensNode != 0) {
-            votes += getPriorVotes(ensNode, blockNumber);
+            votes = _getPriorVotes(ensNode, blockNumber);
         }
     }
 

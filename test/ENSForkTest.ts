@@ -16,7 +16,10 @@ describe("ENS Fork Test", function () {
     }
 
     const [owner, otherAccount, otherAccount2] = await ethers.getSigners();
-    const { governor, governanceToken } = await setupGovernor(true);
+    const { governor, governanceToken } = await setupGovernor(
+      true,
+      ethers.ZeroAddress
+    );
 
     return { owner, otherAccount, otherAccount2, governor, governanceToken };
   }

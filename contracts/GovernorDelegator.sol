@@ -12,7 +12,8 @@ contract GovernorDelegator is GovernorDelegatorStorage, GovernorEvents {
         address implementation_,
         uint votingPeriod_,
         uint votingDelay_,
-        uint proposalThreshold_
+        uint proposalThreshold_,
+        address ensWorldIdRegistry_
     ) {
         // Admin set to msg.sender for initialization
         admin = msg.sender;
@@ -20,13 +21,14 @@ contract GovernorDelegator is GovernorDelegatorStorage, GovernorEvents {
         delegateTo(
             implementation_,
             abi.encodeWithSignature(
-                "initialize(string,address,address,uint256,uint256,uint256)",
+                "initialize(string,address,address,uint256,uint256,uint256,address)",
                 name_,
                 timelock_,
                 governanceToken_,
                 votingPeriod_,
                 votingDelay_,
-                proposalThreshold_
+                proposalThreshold_,
+                ensWorldIdRegistry_
             )
         );
 

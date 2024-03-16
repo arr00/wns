@@ -15,7 +15,9 @@ describe("Registry Test", function () {
     const resolver = await MockResolver.deploy();
     const ens = await MockENS.deploy(resolver);
 
-    const RegistryFactory = await ethers.getContractFactory("Registry");
+    const RegistryFactory = await ethers.getContractFactory(
+      "ENSWorldIdRegistry"
+    );
     const registry = await RegistryFactory.deploy(
       mockWorldId,
       "App Id",

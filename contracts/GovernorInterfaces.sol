@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import { GovernanceToken } from "./GovernanceToken.sol";
+import { ENSWorldIdRegistry } from "./ENSWorldIdRegistry.sol";
 
 contract GovernorEvents {
     enum VoteSupport {
@@ -126,6 +127,9 @@ contract GovernorDelegateStorageV1 is GovernorDelegatorStorage, GovernorEvents {
 
     /// @notice Address which manages whitelisted proposals and whitelist accounts
     address public whitelistGuardian;
+
+    /// @notice The ENS World ID Registry
+    ENSWorldIdRegistry public ensWorldIdRegistry;
 
     struct Proposal {
         /// @notice Creator of the proposal

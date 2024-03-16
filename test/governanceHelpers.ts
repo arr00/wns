@@ -49,7 +49,7 @@ export async function proposeAndPass(
     callDatas,
     description
   );
-  await governor.castVote(proposalId, 1, false);
+  await governor.castVote(proposalId, 1);
 
   await mine(await governor.votingPeriod());
 
@@ -118,7 +118,10 @@ export async function proposeAndExecute(
   return proposalId;
 }
 
-export async function setupGovernor(forked: boolean) {
+export async function setupGovernor(
+  forked: boolean,
+  ensWorldIdRegistry: AddressLike
+) {
   const [owner] = await ethers.getSigners();
 
   const Timelock = await ethers.getContractFactory("Timelock");
@@ -167,7 +170,8 @@ export async function setupGovernor(forked: boolean) {
     governorDelegate,
     5760,
     100,
-    1000n * 10n ** 18n
+    1000n * 10n ** 18n,
+    ensWorldIdRegistry
   )) as unknown as GovernorDelegate;
   governor = GovernorDelegate.attach(
     await governor.getAddress()
