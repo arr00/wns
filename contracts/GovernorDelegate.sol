@@ -447,116 +447,17 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
      * @param proposalId The id of the proposal to vote on
      * @param support The support value for the vote. 0=against, 1=for, 2=abstain
      */
-    function castVote(uint proposalId, VoteSupport support) external {
-        emit VoteCast(
-            msg.sender,
-            proposalId,
-            support,
-            castVoteInternal(msg.sender, proposalId, support),
-            ""
-        );
-    }
-
-    /**
-     * @notice Cast a vote for a proposal by signature
-     * @dev External function that accepts EIP-712 signatures for voting on proposals.
-     */
-    function castVoteBySig(
+    function castVote(
         uint proposalId,
         VoteSupport support,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                DOMAIN_TYPEHASH,
-                keccak256(bytes(name)),
-                getChainIdInternal(),
-                address(this)
-            )
-        );
-        bytes32 structHash = keccak256(
-            abi.encode(BALLOT_TYPEHASH, proposalId, support)
-        );
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", domainSeparator, structHash)
-        );
-        address signatory = ecrecover(digest, v, r, s);
-        require(
-            signatory != address(0),
-            "Governor::castVoteBySig: invalid signature"
-        );
-        emit VoteCast(
-            signatory,
-            proposalId,
-            support,
-            castVoteInternal(signatory, proposalId, support),
-            ""
-        );
-    }
-
-    /**
-     * @notice Cast a vote for a proposal with a reason
-     * @param proposalId The id of the proposal to vote on
-     * @param support The support value for the vote. 0=against, 1=for, 2=abstain
-     * @param reason The reason given for the vote by the voter
-     */
-    function castVoteWithReason(
-        uint proposalId,
-        VoteSupport support,
-        string calldata reason
+        uint96 votesSqrt
     ) external {
         emit VoteCast(
             msg.sender,
             proposalId,
             support,
-            castVoteInternal(msg.sender, proposalId, support),
-            reason
-        );
-    }
-
-    function castVoteWithReasonBySig(
-        uint proposalId,
-        VoteSupport support,
-        string calldata reason,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        address signatory;
-        {
-            bytes32 domainSeparator = keccak256(
-                abi.encode(
-                    DOMAIN_TYPEHASH,
-                    keccak256(bytes(name)),
-                    getChainIdInternal(),
-                    address(this)
-                )
-            );
-            bytes32 structHash = keccak256(
-                abi.encode(
-                    BALLOT_WITH_REASON_TYPEHASH,
-                    proposalId,
-                    support,
-                    keccak256(bytes(reason))
-                )
-            );
-            bytes32 digest = keccak256(
-                abi.encodePacked("\x19\x01", domainSeparator, structHash)
-            );
-            signatory = ecrecover(digest, v, r, s);
-        }
-        require(
-            signatory != address(0),
-            "Governor::castVoteWithReasonBySig: invalid signature"
-        );
-        emit VoteCast(
-            signatory,
-            proposalId,
-            support,
-            castVoteInternal(signatory, proposalId, support),
-            reason
+            castVoteInternal(msg.sender, proposalId, support, votesSqrt),
+            ""
         );
     }
 
@@ -570,7 +471,8 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
     function castVoteInternal(
         address voter,
         uint proposalId,
-        VoteSupport support
+        VoteSupport support,
+        uint96 votesSqrt
     ) internal returns (uint96) {
         require(
             state(proposalId) == ProposalState.Active,
@@ -579,8 +481,21 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
 
         Proposal storage proposal = proposals[proposalId];
 
-        (uint96 totalVotes, bytes32 ensNode) = governanceToken
+        (uint96 squaredVotes, bytes32 ensNode) = governanceToken
             .getPriorVotesWithENS(voter, proposal.startBlock);
+
+        require(
+            votesSqrt * votesSqrt > squaredVotes,
+            "Governor::castVoteInternal: invalid votesSqrt"
+        );
+        if (votesSqrt * votesSqrt < squaredVotes) {
+            require(
+                (votesSqrt + 1) * (votesSqrt + 1) > squaredVotes,
+                "Governor::castVoteInternal: invalid votesSqrt"
+            );
+        }
+
+        uint96 totalVotes = votesSqrt;
 
         require(
             ensWorldIdRegistry.validatedEnsNodes(ensNode),

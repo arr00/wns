@@ -177,15 +177,7 @@ export async function setupGovernor(
     await governor.getAddress()
   ) as GovernorDelegate;
 
-  const eta =
-    BigInt(await time.latest()) + 100n + (await timelock.MINIMUM_DELAY());
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const txData = (await timelock.setPendingAdmin.populateTransaction(governor))
-    .data!;
-  await timelock.queueTransaction(timelock, 0, "", txData, eta);
-  await time.increaseTo(eta);
-  await timelock.executeTransaction(timelock, 0, "", txData, eta);
-  await governor.acceptAdmin();
+  await timelock.setAdmin(governor);
 
   return { governor, governanceToken, timelock };
 }
