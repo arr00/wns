@@ -36,12 +36,7 @@ describe("Registry Test", function () {
     await ens.setResolver(ethers.namehash("cool.eth"), resolver);
     await resolver.setAddr(ethers.namehash("cool.eth"), owner.address);
 
-    await registry.registerEns(
-      ethers.namehash("cool.eth"),
-      0,
-      0,
-      [0, 0, 0, 0, 0, 0, 0, 0]
-    );
+    await registry.registerEns("cool.eth", 0, 0, [0, 0, 0, 0, 0, 0, 0, 0]);
 
     expect(await registry.validatedEnsNodes(ethers.namehash("cool.eth"))).to.be
       .true;

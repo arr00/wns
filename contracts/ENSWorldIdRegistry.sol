@@ -14,6 +14,12 @@ contract ENSWorldIdRegistry is ENSHelpers {
     /// @notice Thrown when attempting to reuse a nullifier
     error InvalidNullifier();
 
+    event EnsNodeRegistered(
+        bytes32 indexed ensNode,
+        string ensName,
+        address owner
+    );
+
     /// @dev The contract's external nullifier hash
     uint256 internal immutable externalNullifier;
 
@@ -44,18 +50,20 @@ contract ENSWorldIdRegistry is ENSHelpers {
             .hashToField();
     }
 
-    /// @param ensNode The node to bind to
+    /// @param ensName The node to bind to
     /// @param root The root of the Merkle tree
     /// @param nullifierHash The nullifier hash for this proof, preventing double signaling
     /// @param proof The zero-knowledge proof
     function registerEns(
-        bytes32 ensNode,
+        string memory ensName,
         uint256 root,
         uint256 nullifierHash,
         uint256[8] calldata proof
     ) public {
         // First, we make sure this person hasn't done this before
         if (nullifierHashes[nullifierHash]) revert InvalidNullifier();
+
+        bytes32 ensNode = encodeENSName(ensName);
 
         require(
             msg.sender == getEnsNodeResolvedAddress(ensNode),
@@ -66,7 +74,7 @@ contract ENSWorldIdRegistry is ENSHelpers {
         // worldId.verifyProof(
         //     root,
         //     groupId,
-        //     abi.encodePacked(ensNode).hashToField(),
+        //     abi.encodePacked(ensName).hashToField(),
         //     nullifierHash,
         //     externalNullifier,
         //     proof
@@ -77,5 +85,7 @@ contract ENSWorldIdRegistry is ENSHelpers {
 
         // Set the ENS node as validated
         validatedEnsNodes[ensNode] = true;
+
+        emit EnsNodeRegistered(ensNode, ensName, msg.sender);
     }
 }

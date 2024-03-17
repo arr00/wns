@@ -13,21 +13,23 @@ async function main() {
 
   console.log("Deployer is " + deployer.address);
 
+  let myNonce = await deployer.getNonce();
+
   const GovernorDelegate = (
     await ethers.getContractFactory("GovernorDelegate")
   ).connect(deployer);
-  const governorDelegate = await GovernorDelegate.deploy();
+  const governorDelegate = await GovernorDelegate.deploy({ nonce: myNonce++ });
+
+  console.log({ governorDelegate });
 
   const GovernanceToken = (
     await ethers.getContractFactory("GovernanceToken")
   ).connect(deployer);
-  const governanceToken = await GovernanceToken.deploy(
-    "My Governance Token",
-    "MGT",
-    deployer.address,
-    ENS,
-    ENS_REVERSE_RESOLVER
+  const governanceToken = GovernanceToken.attach(
+    "0xbb8f6b8df8cca184d54e58019cd8b71bdc26360e"
   );
+
+  console.log({ governanceToken });
 
   const ENSWorldIdRegistry = (
     await ethers.getContractFactory("ENSWorldIdRegistry")
@@ -37,13 +39,23 @@ async function main() {
     "app_staging_1b0aee8169e8e96effda6718b3d14c65",
     "register-ens",
     ENS,
-    ENS_REVERSE_RESOLVER
+    ENS_REVERSE_RESOLVER,
+    { nonce: myNonce++ }
   );
+
+  console.log({ ensWorldIdRegistry });
+  await sleep(2_000);
 
   const Timelock = (await ethers.getContractFactory("Timelock")).connect(
     deployer
   );
-  const timelock = await Timelock.deploy(deployer.address, 60);
+  const timelock = await Timelock.deploy(deployer.address, 60, {
+    nonce: myNonce++,
+  });
+
+  console.log({ timelock });
+
+  await sleep(2_000);
 
   const GovernorDelegator = (
     await ethers.getContractFactory("GovernorDelegator")
@@ -57,18 +69,16 @@ async function main() {
     100,
     1,
     100,
-    ensWorldIdRegistry
+    ensWorldIdRegistry,
+    { nonce: myNonce++ }
   );
 
-  await timelock.setAdmin(governorDelegator);
+  console.log({ governorDelegator });
 
-  console.log({
-    governorDelegator,
-    governanceToken,
-    governorDelegate,
-    ensWorldIdRegistry,
-    timelock,
-  });
+  await sleep(2_000);
+
+  await timelock.setAdmin(governorDelegator, { nonce: myNonce++ });
+
   console.log(
     "Deployment complete. Waiting for 20 seconds to verify contract on etherscan"
   );
@@ -79,8 +89,8 @@ async function main() {
     address: await governorDelegator.getAddress(),
     constructorArguments: [
       "My Governance",
-      "0x0000000000000000000000000000000000000001",
-      "0x96154753af7f2ed7a994e71ad102348486db8b49",
+      await timelock.getAddress(),
+      governanceToken,
       deployer.address,
       governorDelegate,
       100,
