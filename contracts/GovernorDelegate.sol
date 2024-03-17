@@ -12,7 +12,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
     string public name;
 
     /// @notice The number of votes in support of a proposal required in order for a quorum to be reached and for a vote to succeed
-    uint public constant quorumVotes = 400000e18; // 400,000 = 4% of governance token supplu
+    uint public constant quorumVotes = 100e18;
 
     /// @notice The maximum number of actions that can be included in a proposal
     uint public constant proposalMaxOperations = 10; // 10 actions
@@ -472,7 +472,7 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         address voter,
         uint proposalId,
         VoteSupport support,
-        uint96 votesSqrt
+        uint256 votesSqrt
     ) internal returns (uint96) {
         require(
             state(proposalId) == ProposalState.Active,
@@ -484,18 +484,19 @@ contract GovernorDelegate is GovernorDelegateStorageV1 {
         (uint96 squaredVotes, bytes32 ensNode) = governanceToken
             .getPriorVotesWithENS(voter, proposal.startBlock);
 
+        uint256 squaredGivenRoot = (votesSqrt * votesSqrt) / 1e18;
         require(
-            votesSqrt * votesSqrt > squaredVotes,
+            squaredGivenRoot <= squaredVotes,
             "Governor::castVoteInternal: invalid votesSqrt"
         );
-        if (votesSqrt * votesSqrt < squaredVotes) {
+        if (squaredGivenRoot < squaredVotes) {
             require(
-                (votesSqrt + 1) * (votesSqrt + 1) > squaredVotes,
+                ((votesSqrt + 1) * (votesSqrt + 1)) / 1e18 > squaredVotes,
                 "Governor::castVoteInternal: invalid votesSqrt"
             );
         }
 
-        uint96 totalVotes = votesSqrt;
+        uint96 totalVotes = uint96(votesSqrt);
 
         require(
             ensWorldIdRegistry.validatedEnsNodes(ensNode),
